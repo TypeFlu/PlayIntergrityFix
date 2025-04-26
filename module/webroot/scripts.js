@@ -1,8 +1,13 @@
-let actionRunning = false;
+let shellRunning = false;
 let initialPinchDistance = null;
 let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
+
+const spoofVendingSdkToggle = document.getElementById('toggle-sdk-vending');
+const spoofConfig = [
+    { container: "sdk-vending-toggle-container", toggle: spoofVendingSdkToggle, type: 'spoofVendingSdk' }
+];
 
 // Execute shell commands with ksu.exec
 async function execCommand(command) {
@@ -25,6 +30,8 @@ function applyButtonEventListeners() {
 
     fetchButton.addEventListener('click', runAction);
     previewFpToggle.addEventListener('click', async () => {
+        if (shellRunning) return;
+        shellRunning = true;
         try {
             const isChecked = document.getElementById('toggle-preview-fp').checked;
             await execCommand(`sed -i 's/^FORCE_PREVIEW=.*$/FORCE_PREVIEW=${isChecked ? 0 : 1}/' /data/adb/modules/playintegrityfix/action.sh`);
@@ -34,6 +41,7 @@ function applyButtonEventListeners() {
             appendToOutput("[!] Failed to switch fingerprint type");
             console.error('Failed to switch fingerprint type:', error);
         }
+        shellRunning = false;
     });
 
     clearButton.addEventListener('click', () => {
@@ -81,6 +89,56 @@ async function loadVersionFromModuleProp() {
     }
 }
 
+// Function to load spoof config
+async function loadSpoofConfig() {
+    try {
+        const pifJson = await execCommand(`cat /data/adb/modules/playintegrityfix/pif.json`);
+        const config = JSON.parse(pifJson);
+        spoofVendingSdkToggle.checked = config.spoofVendingSdk;
+    } catch (error) {
+        appendToOutput(`[!] Failed to load spoof config`);
+        console.error(`Failed to load spoof config:`, error);
+    }
+}
+
+// Function to setup spoof config button
+function setupSpoofConfigButton(container, toggle, type) {
+    document.getElementById(container).addEventListener('click', async () => {
+        if (shellRunning) return;
+        shellRunning = true;
+        try {
+            const pifFile = await execCommand(`
+                [ ! -f /data/adb/modules/playintegrityfix/pif.json ] || echo "/data/adb/modules/playintegrityfix/pif.json"
+                [ ! -f /data/adb/pif.json ] || echo "/data/adb/pif.json"
+            `);
+            const files = pifFile.split('\n').filter(line => line.trim() !== '');
+            for (const line of files) {
+                await updateSpoofConfig(toggle, type, line.trim());
+            }
+            execCommand(`
+                killall com.google.android.gms.unstable || true
+                killall com.android.vending || true
+            `);
+            loadSpoofConfig();
+            appendToOutput(`[+] Changed ${type} config to ${!toggle.checked}`);
+        } catch (error) {
+            appendToOutput(`[!] Failed to update ${type} config`);
+            console.error(`Failed to update ${type} config:`, error);
+        }
+        shellRunning = false;
+    });
+}
+
+// Function to update spoof config
+async function updateSpoofConfig(toggle, type, pifFile) {
+    const isChecked = toggle.checked;
+    const pifJson = await execCommand(`cat ${pifFile}`);
+    const config = JSON.parse(pifJson);
+    config[type] = !isChecked;
+    const newPifJson = JSON.stringify(config, null, 2);
+    await execCommand(`echo '${newPifJson}' > ${pifFile}`);
+}
+
 // Function to load preview fingerprint config
 async function loadPreviewFingerprintConfig() {
     try {
@@ -114,8 +172,8 @@ function appendToOutput(content) {
 
 // Function to run the script and display its output
 async function runAction() {
-    if (actionRunning) return;
-    actionRunning = true;
+    if (shellRunning) return;
+    shellRunning = true;
     try {
         appendToOutput("[+] Fetching pif.json...");
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -127,21 +185,10 @@ async function runAction() {
         appendToOutput("");
     } catch (error) {
         console.error('Script execution failed:', error);
-        if (typeof ksu !== 'undefined' && ksu.mmrl) {
-            appendToOutput("");
-            appendToOutput("[!] Please allow permission in MMRL settings");
-            appendToOutput("[-] Settings");
-            appendToOutput("[-] Security");
-            appendToOutput("[-] Allow JavaScript API");
-            appendToOutput("[-] Play Integrity Fix");
-            appendToOutput("[-] Enable Allow Advanced KernelSU API");
-            appendToOutput("");
-        } else {
-            appendToOutput("[!] Error: Fail to execute action.sh");
-            appendToOutput("");
-        }
+        appendToOutput("[!] Error: Fail to execute action.sh");
+        appendToOutput("");
     }
-    actionRunning = false;
+    shellRunning = false;
 }
 
 /**
@@ -235,6 +282,10 @@ function updateFontSize(newSize) {
 document.addEventListener('DOMContentLoaded', async () => {
     checkMMRL();
     loadVersionFromModuleProp();
+    await loadSpoofConfig();
+    spoofConfig.forEach(config => {
+        setupSpoofConfigButton(config.container, config.toggle, config.type);
+    });
     loadPreviewFingerprintConfig();
     applyButtonEventListeners();
     applyRippleEffect();
