@@ -7,6 +7,11 @@ let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
+const spoofVendingSdkToggle = document.getElementById('toggle-sdk-vending');
+const spoofConfig = [
+    { container: "sdk-vending-toggle-container", toggle: spoofVendingSdkToggle, type: 'spoofVendingSdk' }
+];
+
 // Apply button event listeners
 function applyButtonEventListeners() {
     const fetchButton = document.getElementById('fetch');
@@ -64,6 +69,108 @@ async function loadVersionFromModuleProp() {
         appendToOutput("[!] Failed to read version from module.prop");
         console.error("Failed to read version from module.prop:", stderr);
     }
+}
+
+// Function to load spoof config
+async function loadSpoofConfig() {
+    try {
+        const { errno, stdout, stderr } = await exec(`cat /data/adb/modules/playintegrityfix/pif.json`);
+        if (errno !== 0) throw new Error(stderr);
+
+        const config = JSON.parse(stdout);
+        spoofVendingSdkToggle.checked = config.spoofVendingSdk;
+    } catch (error) {
+        appendToOutput(`[!] Failed to load spoof config.`);
+        appendToOutput('[!] Warning: Do not use third party tools to fetch pif.json');
+        resetPifJson();
+        console.error(`Failed to load spoof config:`, error);
+    }
+}
+
+// Reset pif.json to default
+function resetPifJson() {
+    fetch('https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_vending/module/pif.json')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(async text => {
+            const pifJson = text.trim();
+            const { errno } = await exec(`
+                echo '${pifJson}' > /data/adb/modules/playintegrityfix/pif.json
+                rm -f /data/adb/pif.json || true
+            `);
+            if (errno === 0) {
+                appendToOutput(`[+] Successfully reset pif.json`);
+            } else {
+                appendToOutput(`[!] Failed to reset pif.json`);
+            }
+        })
+        .catch(error => {
+            appendToOutput(`[!] Failed to reset pif.json: ${error.message}`);
+        });
+}
+
+// Function to setup spoof config button
+function setupSpoofConfigButton(container, toggle, type) {
+    document.getElementById(container).addEventListener('click', async () => {
+        if (shellRunning) return;
+        muteToggle();
+        const { errno, stdout, stderr } = await exec(`
+            [ ! -f /data/adb/modules/playintegrityfix/pif.json ] || echo "/data/adb/modules/playintegrityfix/pif.json"
+            [ ! -f /data/adb/pif.json ] || echo "/data/adb/pif.json"
+        `);
+        if (errno === 0) {
+            const isSuccess = await updateSpoofConfig(toggle, type, stdout);
+            if (isSuccess) {
+                loadSpoofConfig();
+                appendToOutput(`[+] ${toggle.checked ? "Disabled" : "Enabled"} ${type}`);
+            } else {
+                appendToOutput(`[!] Failed to ${toggle.checked ? "disable" : "enable"} ${type}`);
+            }
+            await exec(`
+                killall com.google.android.gms.unstable || true
+                killall com.android.vending || true
+            `);
+        } else {
+            console.error(`Failed to find pif.json:`, stderr);
+        }
+        unmuteToggle();
+    });
+}
+
+/**
+ * Update pif.json
+ * @param {HTMLInputElement} toggle - config toggle of pif.json
+ * @param {string} type - json key to change
+ * @param {string} pifFile - Path of pif.json list
+ * @returns {Promise<boolean>}
+ */
+async function updateSpoofConfig(toggle, type, pifFile) {
+    let isSuccess = true;
+    const files = pifFile.split('\n').filter(line => line.trim() !== '');
+    
+    for (const pifFile of files) {
+        try {
+            // read
+            const { stdout } = await exec(`cat ${pifFile}`);
+            const config = JSON.parse(stdout);
+            
+            // update field
+            config[type] = !toggle.checked;
+            const json = JSON.stringify(config, null, 2);
+            
+            // write
+            const { errno } = await exec(`echo '${json}' > ${pifFile}`);
+            if (errno !== 0) isSuccess = false;
+        } catch (error) {
+            console.error(`Failed to update ${pifFile}:`, error);
+            isSuccess = false;
+        }
+    }
+    return isSuccess;
 }
 
 // Function to load preview fingerprint config
@@ -227,6 +334,10 @@ function updateFontSize(newSize) {
 document.addEventListener('DOMContentLoaded', async () => {
     checkMMRL();
     loadVersionFromModuleProp();
+    await loadSpoofConfig();
+    spoofConfig.forEach(config => {
+        setupSpoofConfigButton(config.container, config.toggle, config.type);
+    });
     loadPreviewFingerprintConfig();
     applyButtonEventListeners();
     applyRippleEffect();
