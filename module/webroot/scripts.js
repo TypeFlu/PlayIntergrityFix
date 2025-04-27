@@ -5,8 +5,16 @@ let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
+const spoofProviderToggle = document.getElementById('toggle-spoofProvider');
+const spoofPropsToggle = document.getElementById('toggle-spoofProps');
+const spoofSignatureToggle = document.getElementById('toggle-spoofSignature');
+const debugToggle = document.getElementById('toggle-debug');
 const spoofVendingSdkToggle = document.getElementById('toggle-sdk-vending');
 const spoofConfig = [
+    { container: "spoofProvider-toggle-container", toggle: spoofProviderToggle, type: 'spoofProvider' },
+    { container: "spoofProps-toggle-container", toggle: spoofPropsToggle, type: 'spoofProps' },
+    { container: "spoofSignature-toggle-container", toggle: spoofSignatureToggle, type: 'spoofSignature' },
+    { container: "debug-toggle-container", toggle: debugToggle, type: 'DEBUG' },
     { container: "sdk-vending-toggle-container", toggle: spoofVendingSdkToggle, type: 'spoofVendingSdk' }
 ];
 
@@ -84,6 +92,7 @@ function spawn(command, args = []) {
 function applyButtonEventListeners() {
     const fetchButton = document.getElementById('fetch');
     const previewFpToggle = document.getElementById('preview-fp-toggle-container');
+    const advanced = document.getElementById('advanced');
     const clearButton = document.querySelector('.clear-terminal');
     const terminal = document.querySelector('.output-terminal-content');
 
@@ -93,6 +102,18 @@ function applyButtonEventListeners() {
         loadPreviewFingerprintConfig();
         appendToOutput(`[+] Switched fingerprint to ${isChecked ? 'beta' : 'preview'}`);
     });
+
+    advanced.addEventListener('click', () => {
+        document.querySelectorAll('.advanced-option').forEach(option => {
+            option.style.display = 'flex';
+        });
+        advanced.style.display = 'none';
+        const lists = Array.from(document.querySelectorAll('.toggle-list'));
+        lists.forEach(list => list.style.borderBottom = '1px solid var(--border-color)');
+        const visibleLists = lists.filter(list => getComputedStyle(list).display !== 'none');
+        if (visibleLists.length > 0) visibleLists[visibleLists.length - 1].style.borderBottom = 'none';
+    });
+    
 
     clearButton.addEventListener('click', () => {
         terminal.innerHTML = '';
@@ -144,6 +165,10 @@ async function loadSpoofConfig() {
     try {
         const pifJson = await exec(`cat /data/adb/modules/playintegrityfix/pif.json`);
         const config = JSON.parse(pifJson);
+        spoofProviderToggle.checked = config.spoofProvider;
+        spoofPropsToggle.checked = config.spoofProps;
+        spoofSignatureToggle.checked = config.spoofSignature;
+        debugToggle.checked = config.DEBUG;
         spoofVendingSdkToggle.checked = config.spoofVendingSdk;
     } catch (error) {
         appendToOutput(`[!] Failed to load spoof config`);
