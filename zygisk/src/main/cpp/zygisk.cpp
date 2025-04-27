@@ -86,37 +86,6 @@ static bool copyFile(const std::string &from, const std::string &to, mode_t perm
            );
 }
 
-static bool checkOtaZip() {
-    int fd = open("/system/etc/security/otacerts.zip", O_RDONLY);
-    if (fd < 0)
-        return true;
-
-    std::vector<uint8_t> buf;
-    uint8_t tmp[512];
-    ssize_t n;
-    bool found = false;
-    const char* pattern = "testkey";
-    const size_t patternLen = strlen(pattern);
-
-    while ((n = read(fd, tmp, sizeof(tmp))) > 0) {
-        buf.insert(buf.end(), tmp, tmp + n);
-        if (buf.size() >= patternLen) {
-            auto it = std::search(
-                buf.end() - std::min(buf.size(), patternLen + sizeof(tmp)),
-                buf.end(),
-                pattern, pattern + patternLen
-            );
-            if (it != buf.end()) {
-                found = true;
-                break;
-            }
-        }
-    }
-
-    close(fd);
-    return found;
-}
-
 static void companion(int fd) {
     bool ok = true;
 
@@ -155,15 +124,6 @@ static void companion(int fd) {
     }
 
     LOGD("[COMPANION] copied json");
-
-    std::string ts(TS_PATH);
-    bool trickyStore = std::filesystem::exists(ts) &&
-                       !std::filesystem::exists(ts + "/disable") &&
-                       !std::filesystem::exists(ts + "/remove");
-    xwrite(fd, &trickyStore, sizeof(bool));
-
-    bool testSignedRom = checkOtaZip();
-    xwrite(fd, &testSignedRom, sizeof(bool));
 
     xwrite(fd, &ok, sizeof(bool));
 }
@@ -224,10 +184,6 @@ public:
 
         xwrite(fd, dir.data(), size);
 
-        xread(fd, &trickyStore, sizeof(bool));
-
-        xread(fd, &testSignedRom, sizeof(bool));
-
         bool ok = false;
         xread(fd, &ok, sizeof(bool));
 
@@ -241,7 +197,7 @@ public:
         if (gmsDir.empty())
             return;
 
-        typedef bool (*InitFuncPtr)(JavaVM *, const std::string &, bool, bool, bool, bool);
+        typedef bool (*InitFuncPtr)(JavaVM *, const std::string &, bool, bool);
 
         void *handle = dlopen((gmsDir + "/libinject.so").c_str(), RTLD_NOW);
 
@@ -253,7 +209,7 @@ public:
         JavaVM *vm = nullptr;
         env->GetJavaVM(&vm);
 
-        if (init_func(vm, gmsDir, trickyStore, testSignedRom, isGmsUnstable, isVending)) {
+        if (init_func(vm, gmsDir, isGmsUnstable, isVending)) {
             LOGD("dlclose injected lib");
             dlclose(handle);
         }
@@ -267,8 +223,6 @@ private:
     Api *api = nullptr;
     JNIEnv *env = nullptr;
     std::string gmsDir;
-    bool trickyStore = false;
-    bool testSignedRom = false;
     bool isGmsUnstable = false;
     bool isVending = false;
 };
