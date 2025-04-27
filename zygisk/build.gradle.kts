@@ -50,7 +50,7 @@ android {
                 cFlags += "-std=c23"
                 cFlags += commonFlags
 
-                cppFlags += "-std=c++20"
+                cppFlags += "-std=c++26"
                 cppFlags += commonFlags
             }
         }
