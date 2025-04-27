@@ -7,8 +7,16 @@ let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
+const spoofProviderToggle = document.getElementById('toggle-spoofProvider');
+const spoofPropsToggle = document.getElementById('toggle-spoofProps');
+const spoofSignatureToggle = document.getElementById('toggle-spoofSignature');
+const debugToggle = document.getElementById('toggle-debug');
 const spoofVendingSdkToggle = document.getElementById('toggle-sdk-vending');
 const spoofConfig = [
+    { container: "spoofProvider-toggle-container", toggle: spoofProviderToggle, type: 'spoofProvider' },
+    { container: "spoofProps-toggle-container", toggle: spoofPropsToggle, type: 'spoofProps' },
+    { container: "spoofSignature-toggle-container", toggle: spoofSignatureToggle, type: 'spoofSignature' },
+    { container: "debug-toggle-container", toggle: debugToggle, type: 'DEBUG' },
     { container: "sdk-vending-toggle-container", toggle: spoofVendingSdkToggle, type: 'spoofVendingSdk' }
 ];
 
@@ -16,6 +24,7 @@ const spoofConfig = [
 function applyButtonEventListeners() {
     const fetchButton = document.getElementById('fetch');
     const previewFpToggle = document.getElementById('preview-fp-toggle-container');
+    const advanced = document.getElementById('advanced');
     const clearButton = document.querySelector('.clear-terminal');
     const terminal = document.querySelector('.output-terminal-content');
 
@@ -26,12 +35,25 @@ function applyButtonEventListeners() {
         appendToOutput(`[+] Switched fingerprint to ${forcePreview ? 'preview' : 'beta'}`);
     });
 
+    advanced.addEventListener('click', () => {
+        document.querySelectorAll('.advanced-option').forEach(option => {
+            option.style.display = 'flex';
+            option.offsetHeight;
+            option.classList.add('show');
+        });
+        advanced.style.display = 'none';
+        const lists = Array.from(document.querySelectorAll('.toggle-list'));
+        lists.forEach(list => list.style.borderBottom = '1px solid var(--border-color)');
+        const visibleLists = lists.filter(list => getComputedStyle(list).display !== 'none');
+        if (visibleLists.length > 0) visibleLists[visibleLists.length - 1].style.borderBottom = 'none';
+    });
+
     clearButton.addEventListener('click', () => {
         terminal.innerHTML = '';
         currentFontSize = 14;
         updateFontSize(currentFontSize);
     });
-    
+
     terminal.addEventListener('touchstart', (e) => {
         if (e.touches.length === 2) {
             e.preventDefault();
@@ -78,6 +100,10 @@ async function loadSpoofConfig() {
         if (errno !== 0) throw new Error(stderr);
 
         const config = JSON.parse(stdout);
+        spoofProviderToggle.checked = config.spoofProvider;
+        spoofPropsToggle.checked = config.spoofProps;
+        spoofSignatureToggle.checked = config.spoofSignature;
+        debugToggle.checked = config.DEBUG;
         spoofVendingSdkToggle.checked = config.spoofVendingSdk;
     } catch (error) {
         appendToOutput(`[!] Failed to load spoof config.`);
@@ -89,7 +115,7 @@ async function loadSpoofConfig() {
 
 // Reset pif.json to default
 function resetPifJson() {
-    fetch('https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_vending/module/pif.json')
+    fetch('https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_manual/module/pif.json')
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
