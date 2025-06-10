@@ -1,3 +1,4 @@
+let forcePreview = true;
 let shellRunning = false;
 let initialPinchDistance = null;
 let currentFontSize = 14;
@@ -83,18 +84,9 @@ function applyButtonEventListeners() {
 
     fetchButton.addEventListener('click', runAction);
     previewFpToggle.addEventListener('click', async () => {
-        if (shellRunning) return;
-        shellRunning = true;
-        try {
-            const isChecked = document.getElementById('toggle-preview-fp').checked;
-            await exec(`sed -i 's/^FORCE_PREVIEW=.*$/FORCE_PREVIEW=${isChecked ? 0 : 1}/' /data/adb/modules/playintegrityfix/autopif.sh`);
-            appendToOutput(`[+] Switched fingerprint to ${isChecked ? 'beta' : 'preview'}`);
-            loadPreviewFingerprintConfig();
-        } catch (error) {
-            appendToOutput("[!] Failed to switch fingerprint type");
-            console.error('Failed to switch fingerprint type:', error);
-        }
-        shellRunning = false;
+        forcePreview = !forcePreview;
+        loadPreviewFingerprintConfig();
+        appendToOutput(`[+] Switched fingerprint to ${isChecked ? 'beta' : 'preview'}`);
     });
 
     clearButton.addEventListener('click', () => {
@@ -143,19 +135,9 @@ async function loadVersionFromModuleProp() {
 }
 
 // Function to load preview fingerprint config
-async function loadPreviewFingerprintConfig() {
-    try {
-        const previewFpToggle = document.getElementById('toggle-preview-fp');
-        const isChecked = await exec(`grep -o 'FORCE_PREVIEW=[01]' /data/adb/modules/playintegrityfix/autopif.sh | cut -d'=' -f2`);
-        if (isChecked === '0') {
-            previewFpToggle.checked = false;
-        } else {
-            previewFpToggle.checked = true;
-        }
-    } catch (error) {
-        appendToOutput("[!] Failed to load preview fingerprint config");
-        console.error("Failed to load preview fingerprint config:", error);
-    }
+function loadPreviewFingerprintConfig() {
+    const previewFpToggle = document.getElementById('toggle-preview-fp');
+    previewFpToggle.checked = forcePreview;
 }
 
 // Function to append element in output terminal
@@ -177,7 +159,9 @@ function appendToOutput(content) {
 function runAction() {
     if (shellRunning) return;
     shellRunning = true;
-    const scriptOutput = spawn("sh", ["/data/adb/modules/playintegrityfix/autopif.sh"]);
+    const args = ["/data/adb/modules/playintegrityfix/autopif.sh"];
+    if (forcePreview) args.push('-p');
+    const scriptOutput = spawn("sh", args);
     scriptOutput.stdout.on('data', (data) => appendToOutput(data));
     scriptOutput.stderr.on('data', (data) => appendToOutput(data));
     scriptOutput.on('exit', () => {
