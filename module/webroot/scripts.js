@@ -87,7 +87,7 @@ function applyButtonEventListeners() {
         shellRunning = true;
         try {
             const isChecked = document.getElementById('toggle-preview-fp').checked;
-            await exec(`sed -i 's/^FORCE_PREVIEW=.*$/FORCE_PREVIEW=${isChecked ? 0 : 1}/' /data/adb/modules/playintegrityfix/action.sh`);
+            await exec(`sed -i 's/^FORCE_PREVIEW=.*$/FORCE_PREVIEW=${isChecked ? 0 : 1}/' /data/adb/modules/playintegrityfix/autopif.sh`);
             appendToOutput(`[+] Switched fingerprint to ${isChecked ? 'beta' : 'preview'}`);
             loadPreviewFingerprintConfig();
         } catch (error) {
@@ -146,7 +146,7 @@ async function loadVersionFromModuleProp() {
 async function loadPreviewFingerprintConfig() {
     try {
         const previewFpToggle = document.getElementById('toggle-preview-fp');
-        const isChecked = await exec(`grep -o 'FORCE_PREVIEW=[01]' /data/adb/modules/playintegrityfix/action.sh | cut -d'=' -f2`);
+        const isChecked = await exec(`grep -o 'FORCE_PREVIEW=[01]' /data/adb/modules/playintegrityfix/autopif.sh | cut -d'=' -f2`);
         if (isChecked === '0') {
             previewFpToggle.checked = false;
         } else {
@@ -177,7 +177,7 @@ function appendToOutput(content) {
 function runAction() {
     if (shellRunning) return;
     shellRunning = true;
-    const scriptOutput = spawn("sh", ["/data/adb/modules/playintegrityfix/action.sh"]);
+    const scriptOutput = spawn("sh", ["/data/adb/modules/playintegrityfix/autopif.sh"]);
     scriptOutput.stdout.on('data', (data) => appendToOutput(data));
     scriptOutput.stderr.on('data', (data) => appendToOutput(data));
     scriptOutput.on('exit', () => {
@@ -185,7 +185,7 @@ function runAction() {
         shellRunning = false;
     });
     scriptOutput.on('error', () => {
-        appendToOutput("[!] Error: Fail to execute action.sh");
+        appendToOutput("[!] Error: Fail to execute autopif.sh");
         appendToOutput("");
         shellRunning = false;
     });

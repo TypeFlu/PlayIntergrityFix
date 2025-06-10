@@ -67,6 +67,5 @@ if [ -f "/data/adb/pif.json" ]; then
     mv -f /data/adb/pif.json /data/adb/pif.json.old
 fi
 
-# give exec perm to action.sh
-chmod +x "$MODPATH/action.sh"
-
+# give exec perm to autopif.sh
+chmod +x "$MODPATH/autopif.sh"
