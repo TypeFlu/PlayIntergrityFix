@@ -13,7 +13,7 @@ TEMPDIR="$MODDIR/temp" #fallback
 mkdir -p "$TEMPDIR"
 
 # fetch script
-download "https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_vending/module/autopif.sh" "$TEMPDIR/temp_autopif.sh"
+download "https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_manual/module/autopif.sh" "$TEMPDIR/temp_autopif.sh"
 
 # hash
 curhash="$(cat $MODDIR/autopif.sh | busybox crc32)"
