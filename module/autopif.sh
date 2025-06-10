@@ -3,7 +3,11 @@
 PATH=/data/adb/ap/bin:/data/adb/ksu/bin:/data/adb/magisk:/data/data/com.termux/files/usr/bin:$PATH
 MODDIR=/data/adb/modules/playintegrityfix
 version=$(grep "^version=" $MODDIR/module.prop | sed 's/version=//g')
-FORCE_PREVIEW=1
+FORCE_PREVIEW=0
+
+case $1 in
+	-p|--preview|preview) FORCE_PREVIEW=1;;
+esac
 
 # lets try to use tmpfs for processing
 TEMPDIR="$MODDIR/temp" #fallback
