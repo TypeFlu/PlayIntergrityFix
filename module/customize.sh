@@ -69,3 +69,4 @@ fi
 
 # give exec perm to autopif.sh
 chmod +x "$MODPATH/autopif.sh"
+chmod +x "$MODPATH/autopif_ota.sh"
