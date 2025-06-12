@@ -158,7 +158,7 @@ function appendToOutput(content) {
 // Function to run the script and display its output
 function runAction() {
     if (shellRunning) return;
-    shellRunning = true;
+    muteToggle();
     const args = ["/data/adb/modules/playintegrityfix/autopif.sh"];
     if (forcePreview) args.push('-p');
     const scriptOutput = spawn("sh", args);
@@ -166,27 +166,41 @@ function runAction() {
     scriptOutput.stderr.on('data', (data) => appendToOutput(data));
     scriptOutput.on('exit', () => {
         appendToOutput("");
-        shellRunning = false;
+        unmuteToggle();
     });
     scriptOutput.on('error', () => {
         appendToOutput("[!] Error: Fail to execute autopif.sh");
         appendToOutput("");
-        shellRunning = false;
+        unmuteToggle();
     });
 }
 
 function updateAutopif() {
-    shellRunning = true;
+    muteToggle();
     const scriptOutput = spawn("sh", ["/data/adb/modules/playintegrityfix/autopif_ota.sh"]);
     scriptOutput.stdout.on('data', (data) => appendToOutput(data));
     scriptOutput.stderr.on('data', (data) => appendToOutput(data));
     scriptOutput.on('exit', () => {
-        shellRunning = false;
+        unmuteToggle();
     });
     scriptOutput.on('error', () => {
         appendToOutput("[!] Error: Fail to execute autopif_ota.sh");
         appendToOutput("");
-        shellRunning = false;
+        unmuteToggle();
+    });
+}
+
+function muteToggle() {
+    shellRunning = true;
+    document.querySelectorAll('.toggle-list').forEach(toggle => {
+        toggle.classList.add('toggle-muted');
+    });
+}
+
+function unmuteToggle() {
+    shellRunning = false;
+    document.querySelectorAll('.toggle-list').forEach(toggle => {
+        toggle.classList.remove('toggle-muted');
     });
 }
 
