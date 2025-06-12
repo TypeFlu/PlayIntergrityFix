@@ -175,6 +175,21 @@ function runAction() {
     });
 }
 
+function updateAutopif() {
+    shellRunning = true;
+    const scriptOutput = spawn("sh", ["/data/adb/modules/playintegrityfix/autopif_ota.sh"]);
+    scriptOutput.stdout.on('data', (data) => appendToOutput(data));
+    scriptOutput.stderr.on('data', (data) => appendToOutput(data));
+    scriptOutput.on('exit', () => {
+        shellRunning = false;
+    });
+    scriptOutput.on('error', () => {
+        appendToOutput("[!] Error: Fail to execute autopif_ota.sh");
+        appendToOutput("");
+        shellRunning = false;
+    });
+}
+
 /**
  * Simulate MD3 ripple animation
  * Usage: class="ripple-element" style="position: relative; overflow: hidden;"
@@ -269,4 +284,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadPreviewFingerprintConfig();
     applyButtonEventListeners();
     applyRippleEffect();
+    updateAutopif();
 });
