@@ -1,79 +1,11 @@
+import { exec, spawn } from "./assets/kernelsu.js";
+
 let forcePreview = true;
 let shellRunning = false;
 let initialPinchDistance = null;
 let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
-
-/**
- * Executes a shell command with KernelSU privileges
- * @param {string} command - The shell command to execute
- * @returns {Promise<string>} A promise that resolves with stdout content
- * @throws {Error} If command execution fails with:
- *   - Non-zero exit code (includes stderr in error message)
- */
-function exec(command) {
-    return new Promise((resolve, reject) => {
-        const callbackFuncName = `exec_callback_${Date.now()}`;
-        window[callbackFuncName] = (errno, stdout, stderr) => {
-            delete window[callbackFuncName];
-            if (errno !== 0) {
-                reject(new Error(`Command failed with exit code ${errno}: ${stderr}`));
-                return;
-            }
-            resolve(stdout);
-        };
-        try {
-            ksu.exec(command, "{}", callbackFuncName);
-        } catch (error) {
-            delete window[callbackFuncName];
-            reject(error);
-        }
-    });
-}
-
-/**
- * Spawns shell process with ksu spawn
- * @param {string} command - The command to execute
- * @param {string[]} [args=[]] - Array of arguments to pass to the command
- * @returns {Object} A child process object with:
- *   - stdout: Stream for standard output
- *   - stderr: Stream for standard error
- *   - stdin: Stream for standard input
- *   - on(event, listener): Attach event listener ('exit', 'error')
- *   - emit(event, ...args): Emit events internally
- */
-function spawn(command, args = []) {
-    const child = {
-        listeners: {},
-        stdout: { listeners: {} },
-        stderr: { listeners: {} },
-        stdin: { listeners: {} },
-        on: function(event, listener) {
-            if (!this.listeners[event]) this.listeners[event] = [];
-            this.listeners[event].push(listener);
-        },
-        emit: function(event, ...args) {
-            if (this.listeners[event]) {
-                this.listeners[event].forEach(listener => listener(...args));
-            }
-        }
-    };
-    ['stdout', 'stderr', 'stdin'].forEach(io => {
-        child[io].on = child.on.bind(child[io]);
-        child[io].emit = child.emit.bind(child[io]);
-    });
-    const callbackName = `spawn_callback_${Date.now()}`;
-    window[callbackName] = child;
-    child.on("exit", () => delete window[callbackName]);
-    try {
-        ksu.spawn(command, JSON.stringify(args), "{}", callbackName);
-    } catch (error) {
-        child.emit("error", error);
-        delete window[callbackName];
-    }
-    return child;
-}
 
 // Apply button event listeners
 function applyButtonEventListeners() {
@@ -86,7 +18,7 @@ function applyButtonEventListeners() {
     previewFpToggle.addEventListener('click', async () => {
         forcePreview = !forcePreview;
         loadPreviewFingerprintConfig();
-        appendToOutput(`[+] Switched fingerprint to ${isChecked ? 'beta' : 'preview'}`);
+        appendToOutput(`[+] Switched fingerprint to ${forcePreview ? 'preview' : 'beta'}`);
     });
 
     clearButton.addEventListener('click', () => {
@@ -125,12 +57,12 @@ function applyButtonEventListeners() {
 // Function to load the version from module.prop
 async function loadVersionFromModuleProp() {
     const versionElement = document.getElementById('version-text');
-    try {
-        const version = await exec("grep '^version=' /data/adb/modules/playintegrityfix/module.prop | cut -d'=' -f2");
-        versionElement.textContent = version.trim();
-    } catch (error) {
+    const { errno, stdout, stderr } = await exec("grep '^version=' /data/adb/modules/playintegrityfix/module.prop | cut -d'=' -f2");
+    if (errno === 0) {
+        versionElement.textContent = stdout.trim();
+    } else {
         appendToOutput("[!] Failed to read version from module.prop");
-        console.error("Failed to read version from module.prop:", error);
+        console.error("Failed to read version from module.prop:", stderr);
     }
 }
 
