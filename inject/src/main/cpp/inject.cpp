@@ -14,7 +14,7 @@ static bool isVending = false;
 
 static nlohmann::json json;
 
-static bool spoofProps = true, spoofProvider = true, spoofSignature = false;
+static bool spoofBuild = true, spoofProps = true, spoofProvider = false, spoofSignature = false;
 
 static bool DEBUG = false;
 static std::string DEVICE_INITIAL_SDK_INT = "21", SECURITY_PATCH, BUILD_ID;
@@ -154,6 +154,11 @@ static void parseJSON() {
             LOGE("Couldn't parse DEVICE_INITIAL_SDK_INT value!");
         }
         json.erase("DEVICE_INITIAL_SDK_INT");
+    }
+
+    if (json.contains("spoofBuild") && json["spoofBuild"].is_boolean()) {
+        spoofBuild = json["spoofBuild"].get<bool>();
+        json.erase("spoofBuild");
     }
 
     if (json.contains("spoofProvider") && json["spoofProvider"].is_boolean()) {
@@ -299,10 +304,10 @@ static void injectDex() {
 
     LOGD("call init");
     auto entryInit = env->GetStaticMethodID(entryPointClass, "init",
-                                            "(Ljava/lang/String;ZZ)V");
+                                            "(Ljava/lang/String;ZZZ)V");
     auto jsonStr = env->NewStringUTF(json.dump().c_str());
     env->CallStaticVoidMethod(entryPointClass, entryInit, jsonStr, spoofProvider,
-                              spoofSignature);
+                              spoofSignature, spoofBuild);
 
     if (env->ExceptionCheck()) {
         env->ExceptionDescribe();
@@ -340,7 +345,9 @@ init(JavaVM *vm, const std::string &gmsDir, bool isGmsUnstable, bool isVending) 
     parseJSON();
 
     if (isGmsUnstable) {
-        UpdateBuildFields();
+        if (spoofBuild) {
+            UpdateBuildFields();
+        }
 
         if (spoofProvider || spoofSignature) {
             injectDex();
