@@ -7,12 +7,14 @@ let currentFontSize = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
+const spoofBuildToggle = document.getElementById('toggle-spoofBuild');
 const spoofProviderToggle = document.getElementById('toggle-spoofProvider');
 const spoofPropsToggle = document.getElementById('toggle-spoofProps');
 const spoofSignatureToggle = document.getElementById('toggle-spoofSignature');
 const debugToggle = document.getElementById('toggle-debug');
 const spoofVendingSdkToggle = document.getElementById('toggle-sdk-vending');
 const spoofConfig = [
+    { container: "spoofBuild-toggle-container", toggle: spoofBuildToggle, type: 'spoofBuild' },
     { container: "spoofProvider-toggle-container", toggle: spoofProviderToggle, type: 'spoofProvider' },
     { container: "spoofProps-toggle-container", toggle: spoofPropsToggle, type: 'spoofProps' },
     { container: "spoofSignature-toggle-container", toggle: spoofSignatureToggle, type: 'spoofSignature' },
@@ -100,6 +102,7 @@ async function loadSpoofConfig() {
         if (errno !== 0) throw new Error(stderr);
 
         const config = JSON.parse(stdout);
+        spoofBuildToggle.checked = config.spoofBuild;
         spoofProviderToggle.checked = config.spoofProvider;
         spoofPropsToggle.checked = config.spoofProps;
         spoofSignatureToggle.checked = config.spoofSignature;
@@ -183,11 +186,11 @@ async function updateSpoofConfig(toggle, type, pifFile) {
             // read
             const { stdout } = await exec(`cat ${pifFile}`);
             const config = JSON.parse(stdout);
-            
+
             // update field
             config[type] = !toggle.checked;
             const json = JSON.stringify(config, null, 2);
-            
+
             // write
             const { errno } = await exec(`echo '${json}' > ${pifFile}`);
             if (errno !== 0) isSuccess = false;

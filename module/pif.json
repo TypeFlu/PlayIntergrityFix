@@ -3,6 +3,7 @@
   "MANUFACTURER": "Google",
   "MODEL": "Pixel 6",
   "SECURITY_PATCH": "2025-05-05",
+  "spoofBuild": true,
   "spoofProvider": false,
   "spoofSignature": false,
   "spoofProps": false,
