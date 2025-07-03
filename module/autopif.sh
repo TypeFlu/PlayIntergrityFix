@@ -69,7 +69,7 @@ echo "$MODEL ($PRODUCT)"
 FINGERPRINT="$(strings PIXEL_ZIP_METADATA | grep -am1 'post-build=' | cut -d= -f2)"
 SECURITY_PATCH="$(strings PIXEL_ZIP_METADATA | grep -am1 'security-patch-level=' | cut -d= -f2)"
 
-# Validate required field to prevent empty pif.json
+# Validate required field to prevent empty pif.prop
 if [ -z "$FINGERPRINT" ] || [ -z "$SECURITY_PATCH" ]; then
 	# link to download pixel rom metadata that skipped connection check due to ulimit
 	download_fail "https://dl.google.com"
@@ -78,31 +78,31 @@ fi
 # Preserve previous setting
 spoofConfig="spoofBuild spoofProvider spoofProps spoofSignature DEBUG spoofVendingSdk"
 for config in $spoofConfig; do
-	if grep -q "\"$config\": true" "$MODDIR/pif.json"; then
+	if grep -q "$config=true" "$MODDIR/pif.prop"; then
 		eval "$config=true"
 	else
 		eval "$config=false"
 	fi
 done
 
-echo "- Dumping values to pif.json ..."
-cat <<EOF | tee pif.json
-{
-  "FINGERPRINT": "$FINGERPRINT",
-  "MANUFACTURER": "Google",
-  "MODEL": "$MODEL",
-  "SECURITY_PATCH": "$SECURITY_PATCH",
-  "spoofBuild" : "$spoofBuild",
-  "spoofProvider": $spoofProvider,
-  "spoofProps": $spoofProps,
-  "spoofSignature": $spoofSignature,
-  "DEBUG": $DEBUG,
-  "spoofVendingSdk": $spoofVendingSdk
-}
+echo "- Dumping values to pif.prop ..."
+echo ""
+cat <<EOF | tee pif.prop
+FINGERPRINT=$FINGERPRINT
+MANUFACTURER=Google
+MODEL=$MODEL
+SECURITY_PATCH=$SECURITY_PATCH
+spoofBuild=$spoofBuild
+spoofProvider=$spoofProvider
+spoofProps=$spoofProps
+spoofSignature=$spoofSignature
+DEBUG=$DEBUG
+spoofVendingSdk=$spoofVendingSdk
 EOF
 
-cat "$TEMPDIR/pif.json" > /data/adb/pif.json
-echo "- new pif.json saved to /data/adb/pif.json"
+cat "$TEMPDIR/pif.prop" > /data/adb/pif.prop
+echo ""
+echo "- new pif.prop saved to /data/adb/pif.prop"
 
 echo "- Cleaning up ..."
 rm -rf "$TEMPDIR"
