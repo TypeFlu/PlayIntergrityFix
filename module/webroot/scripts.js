@@ -98,10 +98,10 @@ async function loadVersionFromModuleProp() {
 // Function to load spoof config
 async function loadSpoofConfig() {
     try {
-        const { errno, stdout, stderr } = await exec(`cat /data/adb/modules/playintegrityfix/pif.json`);
+        const { errno, stdout, stderr } = await exec(`cat /data/adb/modules/playintegrityfix/pif.prop`);
         if (errno !== 0) throw new Error(stderr);
 
-        const config = JSON.parse(stdout);
+        const config = parsePropToMap(stdout);
         spoofBuildToggle.checked = config.spoofBuild;
         spoofProviderToggle.checked = config.spoofProvider;
         spoofPropsToggle.checked = config.spoofProps;
@@ -110,15 +110,15 @@ async function loadSpoofConfig() {
         spoofVendingSdkToggle.checked = config.spoofVendingSdk;
     } catch (error) {
         appendToOutput(`[!] Failed to load spoof config.`);
-        appendToOutput('[!] Warning: Do not use third party tools to fetch pif.json');
-        resetPifJson();
+        appendToOutput('[!] Warning: Do not use third party tools to fetch pif.prop');
+        resetPifProp();
         console.error(`Failed to load spoof config:`, error);
     }
 }
 
-// Reset pif.json to default
-function resetPifJson() {
-    fetch('https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_manual/module/pif.json')
+// Reset pif.prop to default
+function resetPifProp() {
+    fetch('https://raw.githubusercontent.com/KOWX712/PlayIntegrityFix/inject_s/module/pif.prop')
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -126,19 +126,19 @@ function resetPifJson() {
             return response.text();
         })
         .then(async text => {
-            const pifJson = text.trim();
+            const pifProp = text.trim();
             const { errno } = await exec(`
-                echo '${pifJson}' > /data/adb/modules/playintegrityfix/pif.json
-                rm -f /data/adb/pif.json || true
+                echo '${pifProp}' > /data/adb/modules/playintegrityfix/pif.prop
+                rm -f /data/adb/pif.prop || true
             `);
             if (errno === 0) {
-                appendToOutput(`[+] Successfully reset pif.json`);
+                appendToOutput(`[+] Successfully reset pif.prop`);
             } else {
-                appendToOutput(`[!] Failed to reset pif.json`);
+                appendToOutput(`[!] Failed to reset pif.prop`);
             }
         })
         .catch(error => {
-            appendToOutput(`[!] Failed to reset pif.json: ${error.message}`);
+            appendToOutput(`[!] Failed to reset pif.prop: ${error.message}`);
         });
 }
 
@@ -148,8 +148,8 @@ function setupSpoofConfigButton(container, toggle, type) {
         if (shellRunning) return;
         muteToggle();
         const { errno, stdout, stderr } = await exec(`
-            [ ! -f /data/adb/modules/playintegrityfix/pif.json ] || echo "/data/adb/modules/playintegrityfix/pif.json"
-            [ ! -f /data/adb/pif.json ] || echo "/data/adb/pif.json"
+            [ ! -f /data/adb/modules/playintegrityfix/pif.prop ] || echo "/data/adb/modules/playintegrityfix/pif.prop"
+            [ ! -f /data/adb/pif.prop ] || echo "/data/adb/pif.prop"
         `);
         if (errno === 0) {
             const isSuccess = await updateSpoofConfig(toggle, type, stdout);
@@ -164,17 +164,17 @@ function setupSpoofConfigButton(container, toggle, type) {
                 killall com.android.vending || true
             `);
         } else {
-            console.error(`Failed to find pif.json:`, stderr);
+            console.error(`Failed to find pif.prop:`, stderr);
         }
         unmuteToggle();
     });
 }
 
 /**
- * Update pif.json
- * @param {HTMLInputElement} toggle - config toggle of pif.json
- * @param {string} type - json key to change
- * @param {string} pifFile - Path of pif.json list
+ * Update pif.prop
+ * @param {HTMLInputElement} toggle - config toggle of pif.prop
+ * @param {string} type - prop key to change
+ * @param {string} pifFile - Path of pif.prop list
  * @returns {Promise<boolean>}
  */
 async function updateSpoofConfig(toggle, type, pifFile) {
@@ -185,14 +185,14 @@ async function updateSpoofConfig(toggle, type, pifFile) {
         try {
             // read
             const { stdout } = await exec(`cat ${pifFile}`);
-            const config = JSON.parse(stdout);
+            const config = parsePropToMap(stdout);
 
             // update field
             config[type] = !toggle.checked;
-            const json = JSON.stringify(config, null, 2);
+            const prop = parseMapToProp(config);
 
             // write
-            const { errno } = await exec(`echo '${json}' > ${pifFile}`);
+            const { errno } = await exec(`echo '${prop}' > ${pifFile}`);
             if (errno !== 0) isSuccess = false;
         } catch (error) {
             console.error(`Failed to update ${pifFile}:`, error);
@@ -270,6 +270,45 @@ function unmuteToggle() {
     document.querySelectorAll('.toggle-list').forEach(toggle => {
         toggle.classList.remove('toggle-muted');
     });
+}
+
+/**
+ * Parse prop to map
+ * @param {string} prop - prop string
+ * @returns {Object} - map of prop
+ */
+function parsePropToMap(prop) {
+    const map = {};
+    if (!prop || typeof prop !== 'string') return map;
+    const lines = prop.split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        let value = trimmed.slice(eqIdx + 1).trim();
+        if (value === 'true' || value === 'false') value = value === 'true';
+        else if (/^\d+$/.test(value)) value = parseInt(value, 10);
+        else if (/^\d+\.\d+$/.test(value)) value = parseFloat(value);
+        map[key] = value;
+    }
+    return map;
+}
+
+/**
+ * Parse map to prop
+ * @param {Object} map - map of prop
+ * @returns {string} - prop string
+ */
+function parseMapToProp(map) {
+    if (!map || typeof map !== 'object') return '';
+    return Object.entries(map)
+        .map(([key, value]) => {
+            if (typeof value === 'boolean') return `${key}=${value ? 'true' : 'false'}`;
+            return `${key}=${value}`;
+        })
+        .join('\n');
 }
 
 /**
