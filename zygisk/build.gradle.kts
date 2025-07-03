@@ -4,8 +4,8 @@ plugins {
 
 android {
     namespace = "es.chiteroman.playintegrityfix"
-    compileSdk = 35
-    ndkVersion = "28.1.13356709"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
     buildToolsVersion = "36.0.0"
 
     buildFeatures {
@@ -50,7 +50,7 @@ android {
                 cFlags += "-std=c23"
                 cFlags += commonFlags
 
-                cppFlags += "-std=c++26"
+                cppFlags += "-std=c++20"
                 cppFlags += commonFlags
             }
         }
