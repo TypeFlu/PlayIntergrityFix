@@ -62,21 +62,22 @@ if [ -d "/data/adb/modules/MagiskHidePropsConf" ]; then
 fi
 
 # Preserve previous setting
-spoofConfig="spoofProvider spoofProps spoofSignature DEBUG spoofVendingSdk"
-for config in $spoofConfig; do
-    grep -q "$config" "/data/adb/modules/playintegrityfix/pif.json" || continue
-    if grep -q "\"$config\": true" "/data/adb/modules/playintegrityfix/pif.json"; then
-        sed -i "s/\"$config\": .*/\"$config\": true,/" "$MODPATH/pif.json"
-    else
-        sed -i "s/\"$config\": .*/\"$config\": false,/" "$MODPATH/pif.json"
-    fi
-done
-sed -i ':a;N;$!ba;s/,\n}/\n}/g' "$MODPATH/pif.json"
+if [ -f "/data/adb/modules/playintegrityfix/pif.prop" ]; then
+    spoofConfig="spoofBuild spoofProvider spoofProps spoofSignature DEBUG spoofVendingSdk"
+    for config in $spoofConfig; do
+        grep -q "$config" "/data/adb/modules/playintegrityfix/pif.prop" || continue
+        if grep -q "$config=true" "/data/adb/modules/playintegrityfix/pif.prop"; then
+            sed -i "s/$config=.*/$config=true/" "$MODPATH/pif.prop"
+        else
+            sed -i "s/$config=.*/$config=false/" "$MODPATH/pif.prop"
+        fi
+    done
+fi
 
 # Check custom fingerprint
-if [ -f "/data/adb/pif.json" ]; then
-    ui_print "- Backup custom pif.json"
-    mv -f /data/adb/pif.json /data/adb/pif.json.old
+if [ -f "/data/adb/pif.prop" ]; then
+    ui_print "- Backup custom pif.prop"
+    mv -f /data/adb/pif.prop /data/adb/pif.prop.old
 fi
 
 # give exec perm to autopif.sh
