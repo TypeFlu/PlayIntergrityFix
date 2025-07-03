@@ -11,16 +11,13 @@
 
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "PIF", __VA_ARGS__)
 
-#define TS_PATH "/data/adb/modules/tricky_store"
-
 #define DEX_PATH "/data/adb/modules/playintegrityfix/classes.dex"
 
 #define LIB_64 "/data/adb/modules/playintegrityfix/inject/arm64-v8a.so"
 #define LIB_32 "/data/adb/modules/playintegrityfix/inject/armeabi-v7a.so"
 
-#define DEFAULT_JSON "/data/adb/modules/playintegrityfix/pif.json"
-#define CUSTOM_JSON_FORK "/data/adb/modules/playintegrityfix/custom.pif.json"
-#define CUSTOM_JSON "/data/adb/pif.json"
+#define DEFAULT_PIF "/data/adb/modules/playintegrityfix/pif.prop"
+#define CUSTOM_PIF "/data/adb/pif.prop"
 
 #define VENDING_PACKAGE "com.android.vending"
 #define DROIDGUARD_PACKAGE "com.google.android.gms.unstable"
@@ -114,16 +111,14 @@ static void companion(int fd) {
 
     LOGD("[COMPANION] copied dex");
 
-    auto jsonFile = dir + "/pif.json";
-    if (!copyFile(CUSTOM_JSON, jsonFile)) {
-        if (!copyFile(CUSTOM_JSON_FORK, jsonFile)) {
-            if (!copyFile(DEFAULT_JSON, jsonFile)) {
-                ok = false;
-            }
+    auto pifFile = dir + "/pif.prop";
+    if (!copyFile(CUSTOM_PIF, pifFile)) {
+        if (!copyFile(DEFAULT_PIF, pifFile)) {
+            ok = false;
         }
     }
 
-    LOGD("[COMPANION] copied json");
+    LOGD("[COMPANION] copied pif");
 
     xwrite(fd, &ok, sizeof(bool));
 }

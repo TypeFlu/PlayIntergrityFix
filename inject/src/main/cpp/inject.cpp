@@ -1,8 +1,9 @@
 #include "dobby.h"
-#include "json.hpp"
 #include <android/log.h>
 #include <jni.h>
 #include <sys/system_properties.h>
+#include <unordered_map>
+#include <vector>
 
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "PIF", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "PIF", __VA_ARGS__)
@@ -12,13 +13,13 @@ static JNIEnv *env;
 static bool isGmsUnstable = false;
 static bool isVending = false;
 
-static nlohmann::json json;
+static std::unordered_map<std::string, std::string> propMap;
 
 static bool spoofBuild = true, spoofProps = true, spoofProvider = false, spoofSignature = false;
 
 static bool DEBUG = false;
 static std::string DEVICE_INITIAL_SDK_INT = "21", SECURITY_PATCH, BUILD_ID;
-static int spoofVendingSdk = 0;
+static bool spoofVendingSdk = false;
 
 typedef void (*T_Callback)(void *, const char *, const char *, uint32_t);
 
@@ -129,103 +130,114 @@ static void doSpoofVending() {
     env->DeleteLocalRef(buildVersionClass);
 }
 
-static void parseJSON() {
-    if (json.empty())
-        return;
-
-    if (json.contains("spoofVendingSdk") && json["spoofVendingSdk"].is_boolean()) {
-        spoofVendingSdk = json["spoofVendingSdk"].get<bool>();
-        json.erase("spoofVendingSdk");
+static void parsePropFile(const std::string& path) {
+    propMap.clear();
+    FILE* file = fopen(path.c_str(), "r");
+    if (!file) return;
+    char buf[512];
+    while (fgets(buf, sizeof(buf), file)) {
+        std::string line(buf);
+        auto comment = line.find('#');
+        if (comment != std::string::npos) line = line.substr(0, comment);
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (line.empty()) continue;
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = line.substr(0, eq);
+        std::string value = line.substr(eq + 1);
+        propMap[key] = value;
     }
+    fclose(file);
+}
 
+static void parseProps() {
+    if (propMap.count("spoofVendingSdk")) {
+        std::string v = propMap["spoofVendingSdk"];
+        spoofVendingSdk = (v == "1" || v == "true");
+        propMap.erase("spoofVendingSdk");
+    }
     if (isVending) {
-        json.clear();
+        propMap.clear();
         return;
     }
-
-    if (json.contains("DEVICE_INITIAL_SDK_INT")) {
-        if (json["DEVICE_INITIAL_SDK_INT"].is_string()) {
-            DEVICE_INITIAL_SDK_INT =
-                    json["DEVICE_INITIAL_SDK_INT"].get<std::string>();
-        } else if (json["DEVICE_INITIAL_SDK_INT"].is_number_integer()) {
-            DEVICE_INITIAL_SDK_INT =
-                    std::to_string(json["DEVICE_INITIAL_SDK_INT"].get<int>());
-        } else {
-            LOGE("Couldn't parse DEVICE_INITIAL_SDK_INT value!");
-        }
-        json.erase("DEVICE_INITIAL_SDK_INT");
+    if (propMap.count("DEVICE_INITIAL_SDK_INT")) {
+        DEVICE_INITIAL_SDK_INT = propMap["DEVICE_INITIAL_SDK_INT"];
+        propMap.erase("DEVICE_INITIAL_SDK_INT");
     }
-
-    if (json.contains("spoofBuild") && json["spoofBuild"].is_boolean()) {
-        spoofBuild = json["spoofBuild"].get<bool>();
-        json.erase("spoofBuild");
+    if (propMap.count("spoofBuild")) {
+        std::string v = propMap["spoofBuild"];
+        spoofBuild = (v == "1" || v == "true");
+        propMap.erase("spoofBuild");
     }
-
-    if (json.contains("spoofProvider") && json["spoofProvider"].is_boolean()) {
-        spoofProvider = json["spoofProvider"].get<bool>();
-        json.erase("spoofProvider");
+    if (propMap.count("spoofProvider")) {
+        std::string v = propMap["spoofProvider"];
+        spoofProvider = (v == "1" || v == "true");
+        propMap.erase("spoofProvider");
     }
-
-    if (json.contains("spoofProps") && json["spoofProps"].is_boolean()) {
-        spoofProps = json["spoofProps"].get<bool>();
-        json.erase("spoofProps");
+    if (propMap.count("spoofProps")) {
+        std::string v = propMap["spoofProps"];
+        spoofProps = (v == "1" || v == "true");
+        propMap.erase("spoofProps");
     }
-
-    if (json.contains("spoofSignature") && json["spoofSignature"].is_boolean()) {
-        spoofSignature = json["spoofSignature"].get<bool>();
-        json.erase("spoofSignature");
+    if (propMap.count("spoofSignature")) {
+        std::string v = propMap["spoofSignature"];
+        spoofSignature = (v == "1" || v == "true");
+        propMap.erase("spoofSignature");
     }
-
-    if (json.contains("DEBUG") && json["DEBUG"].is_boolean()) {
-        DEBUG = json["DEBUG"].get<bool>();
-        json.erase("DEBUG");
+    if (propMap.count("DEBUG")) {
+        std::string v = propMap["DEBUG"];
+        DEBUG = (v == "1" || v == "true");
+        propMap.erase("DEBUG");
     }
-
-    if (json.contains("FINGERPRINT") && json["FINGERPRINT"].is_string()) {
-        std::string fingerprint = json["FINGERPRINT"].get<std::string>();
-
+    if (propMap.count("FINGERPRINT")) {
+        std::string fingerprint = propMap["FINGERPRINT"];
         std::vector<std::string> vector;
-        auto parts = fingerprint | std::views::split('/');
-
-        for (const auto &part: parts) {
-            auto subParts =
-                    std::string(part.begin(), part.end()) | std::views::split(':');
-            for (const auto &subPart: subParts) {
-                vector.emplace_back(subPart.begin(), subPart.end());
+        size_t start = 0, end;
+        while ((end = fingerprint.find('/', start)) != std::string::npos) {
+            std::string part = fingerprint.substr(start, end - start);
+            size_t sub_start = 0, sub_end;
+            while ((sub_end = part.find(':', sub_start)) != std::string::npos) {
+                vector.push_back(part.substr(sub_start, sub_end - sub_start));
+                sub_start = sub_end + 1;
             }
+            vector.push_back(part.substr(sub_start));
+            start = end + 1;
         }
+        std::string part = fingerprint.substr(start);
+        size_t sub_start = 0, sub_end;
+        while ((sub_end = part.find(':', sub_start)) != std::string::npos) {
+            vector.push_back(part.substr(sub_start, sub_end - sub_start));
+            sub_start = sub_end + 1;
+        }
+        vector.push_back(part.substr(sub_start));
 
-        if (vector.size() == 8) {
-            json["BRAND"] = vector[0];
-            json["PRODUCT"] = vector[1];
-            json["DEVICE"] = vector[2];
-            json["RELEASE"] = vector[3];
-            json["ID"] = vector[4];
-            json["INCREMENTAL"] = vector[5];
-            json["TYPE"] = vector[6];
-            json["TAGS"] = vector[7];
-        } else {
-            LOGE("Error parsing fingerprint values!");
+        static const char* keys[] = {
+            "BRAND",
+            "PRODUCT",
+            "DEVICE",
+            "RELEASE",
+            "ID",
+            "INCREMENTAL",
+            "TYPE",
+            "TAGS"
+        };
+        for (size_t i = 0; i < 8; ++i) {
+            propMap[keys[i]] = (i < vector.size()) ? vector[i] : "";
         }
     }
-
-    if (json.contains("SECURITY_PATCH") && json["SECURITY_PATCH"].is_string()) {
-        SECURITY_PATCH = json["SECURITY_PATCH"].get<std::string>();
+    if (propMap.count("SECURITY_PATCH")) {
+        SECURITY_PATCH = propMap["SECURITY_PATCH"];
     }
-
-    if (json.contains("ID") && json["ID"].is_string()) {
-        BUILD_ID = json["ID"].get<std::string>();
+    if (propMap.count("ID")) {
+        BUILD_ID = propMap["ID"];
     }
 }
 
 static void UpdateBuildFields() {
     jclass buildClass = env->FindClass("android/os/Build");
     jclass versionClass = env->FindClass("android/os/Build$VERSION");
-
-    for (auto &[key, val]: json.items()) {
-        if (!val.is_string())
-            continue;
-
+    for (const auto& [key, val] : propMap) {
         const char *fieldName = key.c_str();
 
         jfieldID fieldID =
@@ -244,8 +256,7 @@ static void UpdateBuildFields() {
         }
 
         if (fieldID != nullptr) {
-            std::string str = val.get<std::string>();
-            const char *value = str.c_str();
+            const char *value = val.c_str();
             jstring jValue = env->NewStringUTF(value);
 
             env->SetStaticObjectField(buildClass, fieldID, jValue);
@@ -257,6 +268,18 @@ static void UpdateBuildFields() {
             LOGD("Set '%s' to '%s'", fieldName, value);
         }
     }
+}
+
+static std::string propMapToJson() {
+    std::string json = "{";
+    bool first = true;
+    for (const auto& [k, v] : propMap) {
+        if (!first) json += ",";
+        first = false;
+        json += "\"" + k + "\":\"" + v + "\"";
+    }
+    json += "}";
+    return json;
 }
 
 static void injectDex() {
@@ -305,7 +328,7 @@ static void injectDex() {
     LOGD("call init");
     auto entryInit = env->GetStaticMethodID(entryPointClass, "init",
                                             "(Ljava/lang/String;ZZZ)V");
-    auto jsonStr = env->NewStringUTF(json.dump().c_str());
+    auto jsonStr = env->NewStringUTF(propMapToJson().c_str());
     env->CallStaticVoidMethod(entryPointClass, entryInit, jsonStr, spoofProvider,
                               spoofSignature, spoofBuild);
 
@@ -338,11 +361,8 @@ init(JavaVM *vm, const std::string &gmsDir, bool isGmsUnstable, bool isVending) 
     dir = gmsDir;
     LOGD("[INJECT] GMS dir: %s", dir.c_str());
 
-    FILE *f = fopen((dir + "/pif.json").c_str(), "r");
-    json = nlohmann::json::parse(f, nullptr, false, true);
-    fclose(f);
-
-    parseJSON();
+    parsePropFile(dir + "/pif.prop");
+    parseProps();
 
     if (isGmsUnstable) {
         if (spoofBuild) {
