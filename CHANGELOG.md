@@ -2,6 +2,15 @@
 
 Play Integrity Fix [INJECT] - fork by KOWX712
 
+## v4.1
+
+- Update fingerprint.
+- Migrate from json to prop (pif.json -> pif.prop) for more optimized binary size.
+- Added spoofBuild option.
+- Auto reset pif.prop when the format is incorrect.
+- Improved WebUI, fixed false error log.
+- Added back module update.
+
 ## v3.3
 
 - OTA update support for fp fetching script, now it can be updated without reboot, module's update will be less needed. (Thanks to @backslashxx)
