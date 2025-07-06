@@ -2,6 +2,29 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+import java.util.zip.CRC32
+
+tasks.register("generateModulePropChecksum") {
+    val propFile = project.rootDir.resolve("module/module.prop")
+    val checksumHeader = project.projectDir.resolve("src/main/cpp/checksum.h")
+
+    doLast {
+        val bytes = propFile.readBytes()
+        val crc = CRC32()
+        crc.update(bytes)
+        val checksum = crc.value
+        val hex = checksum.toString(16)
+        checksumHeader.writeText("""
+            #pragma once
+            #define MODULE_PROP_CHECKSUM_HEX "${hex}"
+        """.trimIndent())
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("generateModulePropChecksum")
+}
+
 android {
     namespace = "es.chiteroman.playintegrityfix"
     compileSdk = 36
