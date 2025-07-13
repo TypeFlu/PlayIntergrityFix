@@ -3,6 +3,8 @@
 #include <string>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <vector>
 #include <cerrno>
 #include <filesystem>
 #include <sys/stat.h>
@@ -82,22 +84,33 @@ static bool copyFile(const std::string &from, const std::string &to, mode_t perm
 }
 
 static bool checkOtaZip() {
-    std::array<char, 256> buffer{};
-    std::string result;
+    int fd = open("/system/etc/security/otacerts.zip", O_RDONLY);
+    if (fd < 0)
+        return true;
+
+    std::vector<uint8_t> buf;
+    uint8_t tmp[512];
+    ssize_t n;
     bool found = false;
+    const char* pattern = "testkey";
+    const size_t patternLen = strlen(pattern);
 
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(
-            popen("unzip -l /system/etc/security/otacerts.zip", "r"), pclose);
-    if (!pipe) return false;
-
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
-        if (result.find("testkey") != std::string::npos) {
-            found = true;
-            break;
+    while ((n = read(fd, tmp, sizeof(tmp))) > 0) {
+        buf.insert(buf.end(), tmp, tmp + n);
+        if (buf.size() >= patternLen) {
+            auto it = std::search(
+                buf.end() - std::min(buf.size(), patternLen + sizeof(tmp)),
+                buf.end(),
+                pattern, pattern + patternLen
+            );
+            if (it != buf.end()) {
+                found = true;
+                break;
+            }
         }
     }
 
+    close(fd);
     return found;
 }
 
