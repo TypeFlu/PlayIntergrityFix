@@ -1,12 +1,7 @@
 name: Android CI
 
 on:
-  push:
-    branches: main
-    paths-ignore: '**.md'
-  pull_request:
-    branches: main
-    paths-ignore: '**.md'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,6 +14,7 @@ jobs:
       with:
         submodules: 'recursive'
         fetch-depth: 1
+        ref: 'main_final'
 
     - name: Set up JDK
       uses: actions/setup-java@v4
