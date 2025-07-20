@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: inject_s
+    branches: master
     paths-ignore: '**.md'
   workflow_dispatch:
 
@@ -22,10 +22,7 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: 21
-
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+        java-version: 21git@github.com
 
     - name: Build with Gradle
       run: ./gradlew assembleRelease
