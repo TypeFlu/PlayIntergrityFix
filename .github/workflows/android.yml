@@ -22,7 +22,8 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'jetbrains'
-        java-version: check-latest
+        java-version: 21
+        check-latest: true
 
     - name: Build with Gradle
       run: ./gradlew assembleRelease
