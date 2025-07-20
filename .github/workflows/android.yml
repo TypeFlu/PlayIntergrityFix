@@ -16,7 +16,7 @@ jobs:
       with:
         submodules: 'recursive'
         fetch-depth: 1
-        ref: inject_s
+        ref: master
 
     - name: Set up JDK
       uses: actions/setup-java@v4
