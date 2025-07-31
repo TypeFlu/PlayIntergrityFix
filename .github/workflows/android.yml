@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
     - name: Check out
