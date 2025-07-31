@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PlayIntegrityFix_${{ github.run_number }}
-          path: out/PlayIntegrityFix.zip
+          path: module/*
           compression-level: 0
 
   dependency-analysis:
