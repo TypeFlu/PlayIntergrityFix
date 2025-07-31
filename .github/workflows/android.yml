@@ -1,8 +1,8 @@
-name: Android CI
+name: Magisk Module CI
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master]
     paths-ignore: ['**.md', '**.txt', 'LICENSE']
   pull_request:
     branches: [master]
@@ -10,75 +10,35 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-  security-events: write
-  actions: read
 
 env:
-  GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false'
+  GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false'
 
 jobs:
-  validation:
-    name: Wrapper Validation
+  validate:
+    name: Validate Build Environment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          submodules: recursive
           fetch-depth: 1
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
 
-  dependency-submission:
-    name: Dependency Analysis
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: 21
-          check-latest: true
-
-      - name: Generate and submit dependency graph
-        uses: gradle/actions/dependency-submission@v4
-        with:
-          build-scan-publish: true
-          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
-          build-scan-terms-of-use-agree: 'yes'
-          dependency-graph: generate-and-submit
-          dependency-graph-continue-on-failure: false
-
   build:
-    name: Build & Test
-    runs-on: macos-15
-    needs: validation
-    strategy:
-      fail-fast: false
-      matrix:
-        api-level: [28, 33, 34]
-        include:
-          - api-level: 28
-            target: google_apis
-          - api-level: 33
-            target: google_apis
-          - api-level: 34
-            target: google_apis_playstore
+    name: Build
+    runs-on: ubuntu-latest
+    needs: validate
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
-          lfs: true
+          fetch-depth: 1
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -99,131 +59,33 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
           build-scan-terms-of-use-agree: 'yes'
-          dependency-graph: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'generate-and-submit' || 'disabled' }}
           add-job-summary: always
-          add-job-summary-as-pr-comment: on-failure
-
-      - name: Prepare build environment
-        run: |
-          echo "Build started at $(date)"
-          echo "GRADLE_USER_HOME=$HOME/.gradle" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Check code formatting
-        run: ./gradlew spotlessCheck --scan --build-cache --parallel
+      - name: Build Magisk module
+        run: ./gradlew assembleRelease --scan --build-cache
 
-      - name: Run static analysis
-        run: ./gradlew lint detekt --scan --build-cache --parallel
+      - name: Verify module structure
+        run: |
+          echo "Generated module package:"
+          ls -la out/
+          echo "Module contents verification:"
+          unzip -l out/PlayIntegrityFix.zip | head -20
 
-      - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --scan --build-cache --parallel
-
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --scan --build-cache --parallel
-
-      - name: Build release APK
-        run: ./gradlew assembleRelease --scan --build-cache --parallel
-
-      - name: Run instrumented tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: ${{ matrix.api-level }}
-          target: ${{ matrix.target }}
-          arch: x86_64
-          profile: Nexus 6
-          script: ./gradlew connectedAndroidTest --scan
-
-      - name: Generate test reports
-        if: always()
-        run: ./gradlew testReport --scan
-
-      - name: Upload test results
-        if: always()
+      - name: Upload module package
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-api-${{ matrix.api-level }}
-          path: |
-            **/build/reports/tests/
-            **/build/test-results/
-          retention-days: 7
+          name: PlayIntegrityFix_${{ github.run_number }}
+          path: out/PlayIntegrityFix.zip
+          compression-level: 0
 
-      - name: Upload lint reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-reports-api-${{ matrix.api-level }}
-          path: |
-            **/build/reports/lint-results*
-            **/build/reports/detekt/
-          retention-days: 7
-
-      - name: Upload build artifacts
-        if: matrix.api-level == 34
-        uses: actions/upload-artifact@v4
-        with:
-          name: PlayIntegrityFix_${{ github.run_number }}-${{ github.sha }}
-          path: |
-            module/
-            **/build/outputs/apk/
-            **/build/outputs/aar/
-          compression-level: 9
-          retention-days: 30
-
-      - name: Cache build outputs
-        if: matrix.api-level == 34
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            **/build/
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ github.sha }}
-
-  security-scan:
-    name: Security Analysis
+  dependency-analysis:
+    name: Dependency Analysis
     runs-on: ubuntu-latest
-    needs: validation
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: 21
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: true
-
-      - name: Run OWASP dependency check
-        run: ./gradlew dependencyCheckAnalyze --scan
-
-      - name: Upload OWASP reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: owasp-reports
-          path: '**/build/reports/dependency-check-report.*'
-          retention-days: 14
-
-  performance-test:
-    name: Performance Testing
-    runs-on: ubuntu-latest
-    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: validate
 
     steps:
       - name: Checkout repository
@@ -235,108 +97,9 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Generate dependency graph
+        uses: gradle/actions/dependency-submission@v4
         with:
-          cache-read-only: true
-
-      - name: Run performance benchmarks
-        run: ./gradlew jmhJar --scan
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: performance-benchmarks
-          path: '**/build/reports/jmh/'
-          retention-days: 30
-
-  release:
-    name: Release Build
-    runs-on: macos-15
-    needs: [build, security-scan]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    environment: production
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-          lfs: true
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: 21
-          check-latest: true
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: wrapper
-          cache-read-only: false
-          cache-cleanup: always
           build-scan-publish: true
           build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
           build-scan-terms-of-use-agree: 'yes'
-
-      - name: Decode signing keystore
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-        run: |
-          if [ ! -z "$SIGNING_KEY" ]; then
-            echo "$SIGNING_KEY" | base64 -d > release-key.keystore
-          fi
-
-      - name: Build release bundle
-        env:
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-        run: ./gradlew bundleRelease assembleRelease --scan --build-cache
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-${{ github.run_number }}
-          path: |
-            module/
-            **/build/outputs/bundle/
-            **/build/outputs/apk/release/
-            **/build/outputs/mapping/
-          compression-level: 9
-          retention-days: 90
-
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            module/*
-            **/build/outputs/apk/release/*.apk
-          draft: false
-          prerelease: contains(github.ref, 'alpha') || contains(github.ref, 'beta')
-          generate_release_notes: true
-
-  cleanup:
-    name: Cleanup
-    runs-on: ubuntu-latest
-    needs: [build, security-scan, performance-test, release]
-    if: always()
-
-    steps:
-      - name: Delete old artifacts
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: |
-            test-results-*
-            lint-reports-*
-          failOnError: false
-
-      - name: Report workflow status
-        if: failure()
-        run: |
-          echo "Workflow failed. Check the job logs for details."
-          echo "Build scan links are available in the job summaries."

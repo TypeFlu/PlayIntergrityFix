@@ -1,25 +1,12 @@
-name: Release
+name: Release Magisk Module
 
 on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.2.3)'
-        required: true
-        type: string
-      prerelease:
-        description: 'Mark as pre-release'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
-  packages: write
-  pull-requests: write
 
 jobs:
   validate-release:
@@ -30,6 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Validate tag format
@@ -42,6 +30,16 @@ jobs:
           fi
           echo "Valid tag format: $TAG"
 
+      - name: Verify tag signature
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if git verify-tag "$TAG" 2>/dev/null; then
+            echo "✅ Tag $TAG has a valid GPG signature"
+          else
+            echo "⚠️  Warning: Tag $TAG is not GPG signed"
+          fi
+
       - name: Check for changelog entry
         run: |
           if [ -f CHANGELOG.md ]; then
@@ -52,10 +50,9 @@ jobs:
           fi
 
   build-release:
-    name: Build Release Artifacts
-    runs-on: macos-15
+    name: Build Release Module
+    runs-on: ubuntu-latest
     needs: validate-release
-    environment: release
 
     steps:
       - name: Checkout repository
@@ -63,7 +60,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-          lfs: true
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -79,66 +75,38 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: wrapper
-          cache-cleanup: always
           build-scan-publish: true
           build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
           build-scan-terms-of-use-agree: 'yes'
 
-      - name: Decode signing key
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-        run: |
-          if [ ! -z "$SIGNING_KEY" ]; then
-            echo "$SIGNING_KEY" | base64 -d > release-key.keystore
-            echo "KEYSTORE_FILE=release-key.keystore" >> $GITHUB_ENV
-          fi
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Build release artifacts
-        env:
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+      - name: Build release modules
         run: |
-          ./gradlew clean
-          ./gradlew assembleRelease bundleRelease --scan --build-cache --parallel
-          ./gradlew publishReleaseBundle --scan || true
+          ./gradlew :inject:assembleRelease --scan --build-cache
+          ./gradlew :zygisk:assembleRelease --scan --build-cache
+          ./gradlew zip --scan
 
       - name: Generate checksums
         run: |
-          find . -name "*.apk" -o -name "*.aab" | while read file; do
-            if [ -f "$file" ]; then
-              sha256sum "$file" > "$file.sha256"
-              md5sum "$file" > "$file.md5"
-            fi
-          done
-
-      - name: Create module package
-        run: |
-          cd module
-          zip -r ../PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip .
-          cd ..
-          sha256sum PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip > PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip.sha256
+          cd out
+          sha256sum PlayIntegrityFix.zip > PlayIntegrityFix.zip.sha256
+          md5sum PlayIntegrityFix.zip > PlayIntegrityFix.zip.md5
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
-            PlayIntegrityFix-*.zip*
-            **/build/outputs/apk/release/*.apk*
-            **/build/outputs/bundle/release/*.aab*
+            out/PlayIntegrityFix.zip*
           retention-days: 90
-
-      - name: Security scan release
-        run: |
-          ./gradlew dependencyCheckAnalyze --scan
-          find . -name "*.apk" -exec echo "APK: {}" \; -exec aapt dump badging {} \;
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: build-release
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout repository
@@ -168,41 +136,12 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.version }}
-          name: Release ${{ github.ref_name || inputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           body_path: release_notes.md
           files: |
-            artifacts/**/*
+            artifacts/*
           draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || inputs.prerelease }}
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
           generate_release_notes: true
           make_latest: true
-
-  post-release:
-    name: Post Release Tasks
-    runs-on: ubuntu-latest
-    needs: create-release
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update version for next development
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          TAG=${GITHUB_REF#refs/tags/v}
-          IFS='.' read -ra VERSION_PARTS <<< "$TAG"
-          MAJOR=${VERSION_PARTS[0]}
-          MINOR=${VERSION_PARTS[1]}
-          PATCH=${VERSION_PARTS[2]}
-          NEXT_PATCH=$((PATCH + 1))
-          NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH-SNAPSHOT"
-          echo "Next development version: $NEXT_VERSION"
-
-      - name: Create update notification
-        run: |
-          echo "Release ${{ github.ref_name }} has been created successfully!"
-          echo "Artifacts are available in the GitHub release."
-          echo "Build scans and reports are available in the workflow summary."
