@@ -1,4 +1,4 @@
-name: Magisk Module CI
+name: Android CI
 
 on:
   push:
@@ -84,7 +84,6 @@ jobs:
   dependency-analysis:
     name: Dependency Analysis
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: validate
 
     steps:
