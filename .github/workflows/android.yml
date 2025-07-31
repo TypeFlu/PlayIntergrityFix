@@ -65,7 +65,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Magisk module
-        run: ./gradlew assembleRelease --scan --build-cache
+        run: ./gradlew assembleRelease --scan --build-cache --refresh-dependencies
 
       - name: Verify module structure
         run: |
