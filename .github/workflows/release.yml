@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.2.3)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag format
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if [[ ! $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid tag format: $TAG"
+            exit 1
+          fi
+          echo "Valid tag format: $TAG"
+
+      - name: Check for changelog entry
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            if ! grep -q "$VERSION" CHANGELOG.md; then
+              echo "Warning: No changelog entry found for $VERSION"
+            fi
+          fi
+
+  build-release:
+    name: Build Release Artifacts
+    runs-on: macos-15
+    needs: validate-release
+    environment: release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          lfs: true
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 21
+          check-latest: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+          cache-cleanup: always
+          build-scan-publish: true
+          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
+          build-scan-terms-of-use-agree: 'yes'
+
+      - name: Decode signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ ! -z "$SIGNING_KEY" ]; then
+            echo "$SIGNING_KEY" | base64 -d > release-key.keystore
+            echo "KEYSTORE_FILE=release-key.keystore" >> $GITHUB_ENV
+          fi
+
+      - name: Build release artifacts
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        run: |
+          ./gradlew clean
+          ./gradlew assembleRelease bundleRelease --scan --build-cache --parallel
+          ./gradlew publishReleaseBundle --scan || true
+
+      - name: Generate checksums
+        run: |
+          find . -name "*.apk" -o -name "*.aab" | while read file; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+              md5sum "$file" > "$file.md5"
+            fi
+          done
+
+      - name: Create module package
+        run: |
+          cd module
+          zip -r ../PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip .
+          cd ..
+          sha256sum PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip > PlayIntegrityFix-${GITHUB_REF#refs/tags/}.zip.sha256
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            PlayIntegrityFix-*.zip*
+            **/build/outputs/apk/release/*.apk*
+            **/build/outputs/bundle/release/*.aab*
+          retention-days: 90
+
+      - name: Security scan release
+        run: |
+          ./gradlew dependencyCheckAnalyze --scan
+          find . -name "*.apk" -exec echo "APK: {}" \; -exec aapt dump badging {} \;
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-release
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.md
+          else
+            echo "Release $VERSION" > release_notes.md
+            echo "" >> release_notes.md
+            echo "### Changes" >> release_notes.md
+            git log --oneline --since="1 month ago" --pretty=format:"- %s" >> release_notes.md
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: Release ${{ github.ref_name || inputs.version }}
+          body_path: release_notes.md
+          files: |
+            artifacts/**/*
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || inputs.prerelease }}
+          generate_release_notes: true
+          make_latest: true
+
+  post-release:
+    name: Post Release Tasks
+    runs-on: ubuntu-latest
+    needs: create-release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version for next development
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          IFS='.' read -ra VERSION_PARTS <<< "$TAG"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH-SNAPSHOT"
+          echo "Next development version: $NEXT_VERSION"
+
+      - name: Create update notification
+        run: |
+          echo "Release ${{ github.ref_name }} has been created successfully!"
+          echo "Artifacts are available in the GitHub release."
+          echo "Build scans and reports are available in the workflow summary."
