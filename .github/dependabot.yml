@@ -1,48 +1,18 @@
+# Basic `dependabot.yml` file with
+# minimum configuration for three package managers
+
 version: 2
 updates:
+  # Enable version updates for npm
   - package-ecosystem: "gradle"
-    directory: "/"                     
-    schedule:
-      interval: "weekly"
-      day: "monday"                    
-    open-pull-requests-limit: 5
-    versioning-strategy: increase      
-    allow:
-      - dependency-type: "all"         
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
-    commit-message:
-      prefix: "chore(deps):"
-    labels:
-      - "dependencies"
-      - "automerge"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"                     
-    schedule:
-      interval: "weekly"
-      day: "wednesday"                
-    open-pull-requests-limit: 3
-    versioning-strategy: increase
-    allow:
-      - dependency-type: "all"
-    commit-message:
-      prefix: "chore(actions):"
-    labels:
-      - "actions-upgrade"
-      - "automerge"
-      
-  - package-ecosystem: "gradle"
+    # Look for `package.json` and `lock` files in the `root` directory
     directory: "/"
+    # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: "daily"
-    vendor-branch-commit-message:
-      prefix: "build(security):"
-    allow:
-      - dependency-type: "all"
-    security-updates-only: true
-    open-pull-requests-limit: 2
-    labels:
-      - "security"
-      - "automerge"
+
+  
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
